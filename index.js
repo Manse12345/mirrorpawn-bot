@@ -43,6 +43,10 @@ function saleEmbed(s) {
     { name: "Avance", value: `${fmt(s.profit)} ${CUR}`, inline: true },
   ];
   if (s.cust_id) fields.push({ name: "Kunde-ID", value: `\`${s.cust_id}\` (+${s.points}p)`, inline: true });
+  if (s.seller_name) {
+    const comm = +s.commission || 0;
+    fields.push({ name: "Sælger", value: comm > 0 ? `${s.seller_name} (+${fmt(comm)} ${CUR} i provision)` : s.seller_name, inline: true });
+  }
   return {
     title: "💰 Nyt salg",
     color: GREEN,
