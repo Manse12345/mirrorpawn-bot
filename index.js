@@ -38,18 +38,24 @@ const GOLD = 0xf5b301, GREEN = 0x2e7d32, BLUE = 0x1f3864;
 
 function saleEmbed(s) {
   const items = (s.lines || []).map((l) => `${l.qty}× ${l.name}`).join(" · ") || "—";
-  const fields = [
-    { name: "Udbetalt", value: `**${fmt(s.total)} ${CUR}**`, inline: true },
-    { name: "Avance", value: `${fmt(s.profit)} ${CUR}`, inline: true },
-  ];
-  if (s.cust_id) fields.push({ name: "Kunde-ID", value: `\`${s.cust_id}\` (+${s.points}p)`, inline: true });
+  const isSell = s.type === "sell";
+  const fields = isSell
+    ? [
+        { name: "Modtaget", value: `**${fmt(s.total)} ${CUR}**`, inline: true },
+        { name: "Fortjeneste", value: `${fmt(s.profit)} ${CUR}`, inline: true },
+      ]
+    : [
+        { name: "Udbetalt", value: `**${fmt(s.total)} ${CUR}**`, inline: true },
+        { name: "Avance", value: `${fmt(s.profit)} ${CUR}`, inline: true },
+      ];
+  if (s.cust_id) fields.push({ name: "Kunde-ID", value: `\`${s.cust_id}\`${s.points ? ` (+${s.points}p)` : ""}`, inline: true });
   if (s.seller_name) {
     const comm = +s.commission || 0;
     fields.push({ name: "Sælger", value: comm > 0 ? `${s.seller_name} (+${fmt(comm)} ${CUR} i provision)` : s.seller_name, inline: true });
   }
   return {
-    title: "💰 Nyt salg",
-    color: GREEN,
+    title: isSell ? "🏷️ Vare solgt" : "💰 Nyt køb",
+    color: isSell ? GREEN : GOLD,
     description: items,
     fields,
     timestamp: s.at,
