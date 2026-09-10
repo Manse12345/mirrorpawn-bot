@@ -1,0 +1,13 @@
+{
+  "name": "mirrorpawn-discord-poster",
+  "version": "1.0.0",
+  "description": "Poster Mirror Pawn-salg og -hændelser til Discord via webhook.",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
