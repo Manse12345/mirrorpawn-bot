@@ -36,19 +36,36 @@ async function sendDiscord(embed) {
 
 const GOLD = 0xf5b301, GREEN = 0x2e7d32, BLUE = 0x1f3864;
 
+// Formaterer varelinjerne som en pæn, læsbar kvitteringsblok (antal, pris pr. stk. og
+// linjetotal) i stedet for én rå tekstlinje. Discord-felter har en grænse på 1024 tegn,
+// så en meget lang handel skæres af med "…" i stedet for at fejle hele postningen.
+function formatItemLines(lines) {
+  if (!lines || !lines.length) return "—";
+  const text = lines
+    .map((l) => {
+      const qty = +l.qty || 0;
+      const sum = +l.sum || 0;
+      const unitPrice = qty ? Math.round(sum / qty) : +l.price || 0;
+      return `${qty}× ${l.name} — ${fmt(unitPrice)} ${CUR}/stk. (${fmt(sum)} ${CUR})`;
+    })
+    .join("\n");
+  return text.length > 1000 ? text.slice(0, 1000) + "\n…" : text;
+}
+
 function saleEmbed(s) {
-  const items = (s.lines || []).map((l) => `${l.qty}× ${l.name}`).join(" · ") || "—";
   const isSell = s.type === "sell";
-  const fields = isSell
-    ? [
-        { name: "Modtaget", value: `**${fmt(s.total)} ${CUR}**`, inline: true },
-        { name: "Fortjeneste", value: `${fmt(s.profit)} ${CUR}`, inline: true },
-      ]
-    : [
-        { name: "Udbetalt", value: `**${fmt(s.total)} ${CUR}**`, inline: true },
-        { name: "Avance", value: `${fmt(s.profit)} ${CUR}`, inline: true },
-      ];
+  const dt = new Date(s.at);
+  const dateStr = `${dt.toLocaleDateString("da-DK")} ${dt.toTimeString().slice(0, 5)}`;
+
+  const fields = [{ name: "Dato/tid", value: dateStr, inline: true }];
   if (s.cust_id) fields.push({ name: "Kunde-ID", value: `\`${s.cust_id}\`${s.points ? ` (+${s.points}p)` : ""}`, inline: true });
+  fields.push({ name: "Varer", value: formatItemLines(s.lines) });
+  fields.push(
+    isSell
+      ? { name: "Modtaget (total)", value: `**${fmt(s.total)} ${CUR}**`, inline: true }
+      : { name: "Udbetalt (total)", value: `**${fmt(s.total)} ${CUR}**`, inline: true }
+  );
+  fields.push({ name: isSell ? "Fortjeneste" : "Avance", value: `${fmt(s.profit)} ${CUR}`, inline: true });
   if (s.seller_name) {
     const comm = +s.commission || 0;
     fields.push({ name: "Sælger", value: comm > 0 ? `${s.seller_name} (+${fmt(comm)} ${CUR} i provision)` : s.seller_name, inline: true });
@@ -56,7 +73,6 @@ function saleEmbed(s) {
   return {
     title: isSell ? "🏷️ Vare solgt" : "💰 Nyt køb",
     color: isSell ? GREEN : GOLD,
-    description: items,
     fields,
     timestamp: s.at,
     footer: { text: "Mirror Pawn" },
