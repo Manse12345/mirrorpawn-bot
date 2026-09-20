@@ -32,21 +32,27 @@ async function sb(path, opts = {}) {
   return r.status === 204 ? null : r.json();
 }
 
+// Sender en rå webhook-payload (bruges af påmindelsen nedenfor, som har brug for
+// "content" + "allowed_mentions" ud over selve embeddet, for at et @ping reelt
+// trigger en Discord-notifikation — et ping INDE I et embed pinger IKKE nogen).
+async function sendDiscordPayload(webhookUrl, payload) {
+  const r = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok && r.status !== 204) console.error("Discord-fejl:", r.status, await r.text());
+}
 // Tager selve webhook-URL'en som parameter, så salg/hændelser (DISCORD_WEBHOOK) og
 // vagt-stemplinger (VAGT_WEBHOOK) kan poste til to forskellige Discord-kanaler med
 // samme underliggende funktion. sendDiscord(...) nedenfor er den UÆNDREDE genvej,
 // som salg/hændelser stadig bruger, så den postering er 100% som før.
-async function sendDiscordTo(webhookUrl, embed) {
-  const r = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ embeds: [embed] }),
-  });
-  if (!r.ok && r.status !== 204) console.error("Discord-fejl:", r.status, await r.text());
-}
+const sendDiscordTo = (webhookUrl, embed) => sendDiscordPayload(webhookUrl, { embeds: [embed] });
 const sendDiscord = (embed) => sendDiscordTo(DISCORD_WEBHOOK, embed);
 
-const GOLD = 0xf5b301, GREEN = 0x2e7d32, BLUE = 0x1f3864, RED = 0xc0392b;
+const GOLD = 0xf5b301, GREEN = 0x2e7d32, BLUE = 0x1f3864, RED = 0xc0392b, ORANGE = 0xe67e22;
+// Ingen aktivitet (handel) i dette antal ms, mens man er på vagt → påmindelse om at stemple ud.
+const REMINDER_MS = 45 * 60 * 1000;
 
 // Formaterer varelinjerne som en pæn, læsbar kvitteringsblok (antal, pris pr. stk. og
 // linjetotal) i stedet for én rå tekstlinje. Discord-felter har en grænse på 1024 tegn,
@@ -139,6 +145,57 @@ function shiftOutEmbed(s) {
   };
 }
 
+function reminderEmbed(name, mention) {
+  const who = mention || `**${name}**`;
+  return {
+    title: "⏰ Husk at stemple ud?",
+    color: ORANGE,
+    description: `${who} — du har ikke lavet en handel i 45 min. Er du stadig på arbejde? Husk at stemple ud hvis du holder fri.`,
+    timestamp: new Date().toISOString(),
+    footer: { text: "Mirror Pawn · Vagt" },
+  };
+}
+
+// Tjekker hver ÅBNE vagt (clock_out er tom) for inaktivitet: findes der en handel
+// (matchet på seller_id = shifts.user_id) fra EFTER personen stemplede ind, bruges
+// tidspunktet for den seneste af dem som "uret" — ellers bruges selve ind-stemplings-
+// tidspunktet. Går der 45 min uden at "uret" har rykket sig, og er der ikke allerede
+// sendt en påmindelse for PRÆCIS dette aktivitetstidspunkt (last_reminder_at >=
+// aktivitetstidspunkt = allerede påmindet, ingen ny handel siden), sendes én
+// påmindelse, og last_reminder_at sættes til nu. Laver personen en ny handel bagefter,
+// rykker "uret" sig forbi last_reminder_at igen, og en ny påmindelse kan sendes efter
+// endnu 45 min uden aktivitet — helt automatisk, uden separat "nulstil"-kald nogen
+// steder. Rører ALDRIG selve handlen/kassen/lageret — læser kun sales.at og seller_id.
+async function reminderTick() {
+  const openShifts = await sb(`shifts?select=id,user_id,clock_in,last_reminder_at,profiles(name,discord_id)&clock_out=is.null`);
+  let sent = 0;
+  const now = Date.now();
+  for (const s of openShifts) {
+    const clockInMs = new Date(s.clock_in).getTime();
+    const lastSale = await sb(
+      `sales?select=at&seller_id=eq.${encodeURIComponent(s.user_id)}&at=gte.${encodeURIComponent(s.clock_in)}&order=at.desc&limit=1`
+    );
+    const lastActivityMs = lastSale.length ? new Date(lastSale[0].at).getTime() : clockInMs;
+    const alreadyReminded = s.last_reminder_at && new Date(s.last_reminder_at).getTime() >= lastActivityMs;
+    if (now - lastActivityMs < REMINDER_MS || alreadyReminded) continue;
+
+    const name = s.profiles?.name || "Ukendt medarbejder";
+    const discordId = s.profiles?.discord_id;
+    const mention = discordId ? `<@${discordId}>` : "";
+    await sendDiscordPayload(VAGT_WEBHOOK, {
+      content: mention, // det er DENNE linje, ikke embeddet, der får Discord til reelt at pinge
+      embeds: [reminderEmbed(name, mention)],
+      allowed_mentions: discordId ? { users: [discordId] } : { parse: [] },
+    });
+    await sb(`shifts?id=eq.${s.id}`, {
+      method: "PATCH", headers: { Prefer: "return=minimal" },
+      body: JSON.stringify({ last_reminder_at: new Date(now).toISOString() }),
+    });
+    sent++;
+  }
+  return sent;
+}
+
 async function tick() {
   try {
     // 1) upostede salg (ældste først)
@@ -170,6 +227,11 @@ async function tick() {
         await sb(`shifts?id=eq.${s.id}`, { method: "PATCH", headers: { Prefer: "return=minimal" }, body: JSON.stringify({ posted_out: true }) });
       }
       if (clockedIn.length || clockedOut.length) console.log(`Postet ${clockedIn.length} ind-stemplinger, ${clockedOut.length} ud-stemplinger.`);
+
+      // 4) inaktivitets-påmindelse (kræver VAGT_WEBHOOK_URL, samme kanal som ind/ud
+      // ovenfor, og migrationen 17-shift-inactivity-reminder.sql)
+      const reminded = await reminderTick();
+      if (reminded) console.log(`Sendt ${reminded} inaktivitets-påmindelse(r).`);
     }
   } catch (err) {
     console.error("tick-fejl:", err.message);
