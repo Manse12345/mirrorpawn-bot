@@ -42,6 +42,14 @@ if (!VAGT_ENABLED) {
 }
 
 const fmt = (n) => Math.round(+n || 0).toLocaleString("da-DK");
+// Alle klokkeslæt/datoer i Discord-beskederne skal vises i DANSK tid
+// (Europe/Copenhagen), med korrekt sommer-/vintertid — IKKE i serverens egen
+// tidszone (Railway kører typisk UTC, hvilket var præcis årsagen til at alt
+// stod 2 timer forkert om sommeren). Tidsstemplerne i databasen er og forbliver
+// UTC — dette rører KUN de tekststrenge, der bygges til visning her.
+const DK_TZ = "Europe/Copenhagen";
+const fmtTimeDK = (ms) => new Date(ms).toLocaleTimeString("en-GB", { timeZone: DK_TZ, hour: "2-digit", minute: "2-digit", hour12: false });
+const fmtDateDK = (ms) => new Date(ms).toLocaleDateString("da-DK", { timeZone: DK_TZ });
 const H = { "Content-Type": "application/json", apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` };
 
 async function sb(path, opts = {}) {
@@ -80,8 +88,7 @@ function formatItemLines(lines) {
 
 function saleEmbed(s) {
   const isSell = s.type === "sell";
-  const dt = new Date(s.at);
-  const dateStr = `${dt.toLocaleDateString("da-DK")} ${dt.toTimeString().slice(0, 5)}`;
+  const dateStr = `${fmtDateDK(s.at)} ${fmtTimeDK(s.at)}`;
 
   const fields = [{ name: "Dato/tid", value: dateStr, inline: true }];
   if (s.cust_id) fields.push({ name: "Kunde-ID", value: `\`${s.cust_id}\`${s.points ? ` (+${s.points}p)` : ""}`, inline: true });
@@ -123,8 +130,7 @@ function eventEmbed(e) {
 const shiftPersonName = (s) => s.profiles?.name || "Ukendt medarbejder";
 
 function shiftInEmbed(s) {
-  const dt = new Date(s.clock_in);
-  const dateStr = `${dt.toLocaleDateString("da-DK")} ${dt.toTimeString().slice(0, 5)}`;
+  const dateStr = `${fmtDateDK(s.clock_in)} ${fmtTimeDK(s.clock_in)}`;
   return {
     title: `🟢 ${shiftPersonName(s)} stemplede IND`,
     color: GREEN,
@@ -135,9 +141,10 @@ function shiftInEmbed(s) {
 }
 
 function shiftOutEmbed(s) {
-  const inDt = new Date(s.clock_in), outDt = new Date(s.clock_out);
-  const dateStr = `${outDt.toLocaleDateString("da-DK")} ${outDt.toTimeString().slice(0, 5)}`;
-  const durMin = Math.max(0, Math.round((outDt - inDt) / 60000));
+  const dateStr = `${fmtDateDK(s.clock_out)} ${fmtTimeDK(s.clock_out)}`;
+  // Varigheden regnes på de rå tidsstempler (UTC-baserede ms-epoker) — timezone-
+  // uafhængigt og derfor altid korrekt, uanset hvilken tidszone der bruges til VISNING.
+  const durMin = Math.max(0, Math.round((new Date(s.clock_out) - new Date(s.clock_in)) / 60000));
   const durStr = `${Math.floor(durMin / 60)}t ${durMin % 60}m`;
   return {
     title: `🔴 ${shiftPersonName(s)} stemplede UD`,
@@ -163,7 +170,7 @@ function reminderEmbed(name, mention) {
 }
 
 function confirmedEmbed(name, atMs) {
-  const t = new Date(atMs).toTimeString().slice(0, 5);
+  const t = fmtTimeDK(atMs);
   return {
     title: "✅ Bekræftet",
     color: GREEN,
@@ -174,9 +181,8 @@ function confirmedEmbed(name, atMs) {
 }
 
 function autoClockoutEmbed(name, clockOutMs, clockInMs) {
-  const outDt = new Date(clockOutMs);
-  const dateStr = outDt.toLocaleDateString("da-DK");
-  const timeStr = outDt.toTimeString().slice(0, 5);
+  const dateStr = fmtDateDK(clockOutMs);
+  const timeStr = fmtTimeDK(clockOutMs);
   const durMin = Math.max(0, Math.round((clockOutMs - clockInMs) / 60000));
   const durStr = `${Math.floor(durMin / 60)}t ${durMin % 60}m`;
   return {
