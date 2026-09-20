@@ -26,9 +26,8 @@ const DISCORD_GUILD_ID  = process.env.DISCORD_GUILD_ID;
 const VAGT_CHANNEL_ID   = process.env.VAGT_CHANNEL_ID;
 const VAGT_ENABLED      = !!(DISCORD_BOT_TOKEN && DISCORD_GUILD_ID && VAGT_CHANNEL_ID);
 
-// MIDLERTIDIGT sat ned til 2 min / 1 min til test — sæt tilbage til 45/15 bagefter:
-const REMINDER_MS = 2 * 60 * 1000; // ingen handel i 45 min → påmindelse (normalt: 45 * 60 * 1000)
-const CONFIRM_MS  = 1 * 60 * 1000; // intet knap-tryk i 15 min efter påmindelsen → auto-udstempling (normalt: 15 * 60 * 1000)
+const REMINDER_MS = 45 * 60 * 1000; // ingen handel i 45 min → påmindelse
+const CONFIRM_MS  = 15 * 60 * 1000; // intet knap-tryk i 15 min efter påmindelsen → auto-udstempling
 
 if (!SUPABASE_URL || !SUPABASE_KEY || !DISCORD_WEBHOOK) {
   console.error("Mangler miljøvariabler: SUPABASE_URL, SUPABASE_SERVICE_KEY, DISCORD_WEBHOOK_URL");
